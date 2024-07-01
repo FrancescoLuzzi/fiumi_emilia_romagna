@@ -23,7 +23,10 @@ use ratatui::{
     text::Span,
     widgets::{Axis, Block, Chart, Dataset, StatefulWidgetRef, Widget},
 };
-use std::ops::ControlFlow;
+use std::{
+    ops::ControlFlow,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone)]
 struct SinSignal {
@@ -53,24 +56,44 @@ impl Iterator for SinSignal {
     }
 }
 
-#[derive(Default)]
 pub struct GraphPageState {
+    signal1: SinSignal,
+    signal2: SinSignal,
     data1: Vec<(f64, f64)>,
     data2: Vec<(f64, f64)>,
     window: [f64; 2],
+    last_tick: Instant,
+    tick_rate: Duration,
 }
 
 impl GraphPageState {
-    pub fn new() -> Self {
-        let mut signal1 = SinSignal::new(0.2, 3.0, 18.0);
-        let mut signal2 = SinSignal::new(0.1, 2.0, 10.0);
+    pub fn new(period1: f64, period2: f64) -> Self {
+        let mut signal1 = SinSignal::new(0.2, period1, 18.0);
+        let mut signal2 = SinSignal::new(0.1, period2, 10.0);
         let data1 = signal1.by_ref().take(200).collect::<Vec<(f64, f64)>>();
         let data2 = signal2.by_ref().take(200).collect::<Vec<(f64, f64)>>();
         Self {
+            signal1,
             data1,
+            signal2,
             data2,
             window: [0.0, 20.0],
+            last_tick: Instant::now(),
+            tick_rate: Duration::from_millis(250),
         }
+    }
+}
+
+impl GraphPageState {
+    fn on_tick(&mut self) {
+        self.data1.drain(0..5);
+        self.data1.extend(self.signal1.by_ref().take(5));
+
+        self.data2.drain(0..10);
+        self.data2.extend(self.signal2.by_ref().take(10));
+
+        self.window[0] += 1.0;
+        self.window[1] += 1.0;
     }
 }
 
@@ -81,6 +104,10 @@ impl StatefulWidgetRef for GraphPage {
     where
         Self: Sized,
     {
+        if state.last_tick.elapsed() >= state.tick_rate {
+            state.on_tick();
+            state.last_tick = Instant::now();
+        }
         let x_labels = vec![
             Span::styled(
                 format!("{}", state.window[0]),
@@ -94,12 +121,12 @@ impl StatefulWidgetRef for GraphPage {
         ];
         let datasets = vec![
             Dataset::default()
-                .name("data2")
+                .name("data1")
                 .marker(symbols::Marker::Dot)
                 .style(Style::default().fg(Color::Cyan))
                 .data(&state.data1),
             Dataset::default()
-                .name("data3")
+                .name("data2")
                 .marker(symbols::Marker::Braille)
                 .style(Style::default().fg(Color::Yellow))
                 .data(&state.data2),

@@ -13,7 +13,7 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
-use std::{default::Default, error::Error, io, ops::ControlFlow};
+use std::{default::Default, error::Error, io, ops::ControlFlow, time::Duration};
 
 use allerta_meteo::{
     event_handler_trait::MutStatefulEventHandler,
@@ -108,7 +108,10 @@ impl<const N: usize> App<N> {
             Page::Selection(state) => match (SelectionPage {}).handle(event, Some(state)) {
                 ControlFlow::Continue(data) => {
                     if data.is_some() {
-                        self.pages[1] = Page::Graph(GraphPageState::default());
+                        // TODO: create GraphPageState getting the data from the api
+                        // https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/?stazione=-/1129579,4472121/simnbo&variabile=254,0,0/1,-,-,-/B13215
+
+                        // self.pages[1] = Page::Graph(GraphPageState::default());
                         self.page_idx = 1;
                     }
                     ControlFlow::Continue(())
@@ -127,15 +130,17 @@ impl<const N: usize> App<N> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let now = chrono::Local::now().timestamp_millis();
-    let variabile = "254,0,0/1,-,-,-/B13215";
     let mut call = reqwest::Url::parse(
-        "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values",
+        "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values?variabile=254,0,0/1,-,-,-/B13215",
     )
     .unwrap();
     call.query_pairs_mut()
-        .append_pair("variable", variabile)
+        .encoding_override(Some(&|s| s.as_bytes().into()))
         .append_pair("time", &now.to_string());
     let stations: Vec<Station> = reqwest::blocking::get(call)?.json::<Vec<_>>()?;
+    if stations.is_empty() {
+        return Ok(());
+    }
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -145,8 +150,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let app = App::<2>::new([
-        Page::Selection(SelectionPageState::new()),
-        Page::Graph(GraphPageState::new()),
+        Page::Selection(SelectionPageState::new(stations)),
+        Page::Graph(GraphPageState::new(0.1, 1.)),
     ]);
     let res = run_app(&mut terminal, app);
 
@@ -172,9 +177,10 @@ fn run_app<B: Backend, const N: usize>(
 ) -> io::Result<()> {
     loop {
         terminal.draw(|f| app.render(f))?;
-
-        if let ControlFlow::Break(_) = app.handle_event(event::read()?) {
-            return Ok(());
+        if crossterm::event::poll(Duration::new(0, 1_500_000))? {
+            if let ControlFlow::Break(_) = app.handle_event(event::read()?) {
+                return Ok(());
+            }
         }
     }
 }

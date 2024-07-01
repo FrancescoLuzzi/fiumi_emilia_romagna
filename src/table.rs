@@ -1,8 +1,8 @@
 use std::ops::ControlFlow;
 
 use crate::event_handler_trait::MutStatefulEventHandler;
+use crate::Station;
 use crossterm::event::{Event, KeyCode, KeyEventKind};
-use itertools::Itertools;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Margin, Rect},
@@ -18,46 +18,21 @@ const INFO_TEXT: &str = "(Esc) quit | (↑) move up | (↓) move down | (󱞣) s
 
 const ITEM_HEIGHT: usize = 4;
 
-#[derive(Clone)]
-pub struct Data {
-    name: String,
-    address: String,
-    email: String,
-}
-
-impl Data {
-    const fn ref_array(&self) -> [&String; 3] {
-        [&self.name, &self.address, &self.email]
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn address(&self) -> &str {
-        &self.address
-    }
-
-    fn email(&self) -> &str {
-        &self.email
-    }
-}
 #[derive(Default)]
 pub struct SelectionPageState {
     table_state: TableState,
-    items: Vec<Data>,
-    longest_item_lens: (u16, u16, u16), // order is (name, address, email)
+    items: Vec<Station>,
+    longest_item_lens: (u16, u16, u16, u16, u16), // order is (name, address, email)
     scroll_state: ScrollbarState,
 }
 
 impl SelectionPageState {
-    pub fn new() -> Self {
-        let data_vec = generate_fake_names();
+    pub fn new(stations: Vec<Station>) -> Self {
         Self {
             table_state: TableState::default().with_selected(0),
-            longest_item_lens: constraint_len_calculator(&data_vec),
-            scroll_state: ScrollbarState::new((data_vec.len() - 1) * ITEM_HEIGHT),
-            items: data_vec,
+            longest_item_lens: constraint_len_calculator(&stations),
+            scroll_state: ScrollbarState::new((stations.len().saturating_sub(1)) * ITEM_HEIGHT),
+            items: stations,
         }
     }
     pub fn next(&mut self) {
@@ -90,7 +65,7 @@ impl SelectionPageState {
         self.scroll_state = self.scroll_state.position(i * ITEM_HEIGHT);
     }
 
-    pub fn get_selected_data(&mut self) -> Option<Data> {
+    pub fn get_selected_data(&mut self) -> Option<Station> {
         match self.table_state.selected() {
             Some(i) => Some(self.items[i].clone()),
             None => None,
@@ -98,36 +73,18 @@ impl SelectionPageState {
     }
 }
 
-fn generate_fake_names() -> Vec<Data> {
-    use fakeit::{address, contact, name};
-
-    (0..20)
-        .map(|_| {
-            let name = name::full();
-            let address = format!(
-                "{}\n{}, {} {}",
-                address::street(),
-                address::city(),
-                address::state(),
-                address::zip()
-            );
-            let email = contact::email();
-
-            Data {
-                name,
-                address,
-                email,
-            }
-        })
-        .sorted_by(|a, b| a.name.cmp(&b.name))
-        .collect_vec()
-}
 fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
-    let header = ["Name", "Address", "Email"]
-        .into_iter()
-        .map(Cell::from)
-        .collect::<Row>()
-        .height(1);
+    let header = [
+        "Stazione",
+        "Ultima rilevazione",
+        "Soglia1",
+        "Soglia2",
+        "Soglia3",
+    ]
+    .into_iter()
+    .map(Cell::from)
+    .collect::<Row>()
+    .height(1);
     let rows = state.items.iter().map(|data| {
         let item = data.ref_array();
         item.into_iter()
@@ -142,7 +99,9 @@ fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
             // + 1 is for padding.
             Constraint::Length(state.longest_item_lens.0 + 1),
             Constraint::Min(state.longest_item_lens.1 + 1),
-            Constraint::Min(state.longest_item_lens.2),
+            Constraint::Min(state.longest_item_lens.2 + 1),
+            Constraint::Min(state.longest_item_lens.3 + 1),
+            Constraint::Min(state.longest_item_lens.4),
         ],
     )
     .header(header)
@@ -156,29 +115,50 @@ fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
     StatefulWidgetRef::render_ref(&t, area, b, &mut state.table_state);
 }
 
-fn constraint_len_calculator(items: &[Data]) -> (u16, u16, u16) {
-    let name_len = items
+fn constraint_len_calculator(items: &[Station]) -> (u16, u16, u16, u16, u16) {
+    let nomestaz_len = items
         .iter()
-        .map(Data::name)
+        .map(Station::nomestaz)
         .map(UnicodeWidthStr::width)
         .max()
         .unwrap_or(0);
-    let address_len = items
+    let value_len = items
         .iter()
-        .map(Data::address)
-        .flat_map(str::lines)
-        .map(UnicodeWidthStr::width)
+        .filter_map(Station::value)
+        .map(f32::to_string)
+        .map(|x| UnicodeWidthStr::width(x.as_str()))
         .max()
         .unwrap_or(0);
-    let email_len = items
+    let soglia1_len = items
         .iter()
-        .map(Data::email)
-        .map(UnicodeWidthStr::width)
+        .map(Station::soglia1)
+        .map(f32::to_string)
+        .map(|x| UnicodeWidthStr::width(x.as_str()))
+        .max()
+        .unwrap_or(0);
+    let soglia2_len = items
+        .iter()
+        .map(Station::soglia2)
+        .map(f32::to_string)
+        .map(|x| UnicodeWidthStr::width(x.as_str()))
+        .max()
+        .unwrap_or(0);
+    let soglia3_len = items
+        .iter()
+        .map(Station::soglia3)
+        .map(f32::to_string)
+        .map(|x| UnicodeWidthStr::width(x.as_str()))
         .max()
         .unwrap_or(0);
 
     #[allow(clippy::cast_possible_truncation)]
-    (name_len as u16, address_len as u16, email_len as u16)
+    (
+        nomestaz_len as u16,
+        value_len as u16,
+        soglia1_len as u16,
+        soglia2_len as u16,
+        soglia3_len as u16,
+    )
 }
 
 fn render_scrollbar(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
@@ -220,12 +200,12 @@ impl StatefulWidgetRef for SelectionPage {
     }
 }
 
-impl MutStatefulEventHandler<SelectionPageState, (), Option<Data>> for SelectionPage {
+impl MutStatefulEventHandler<SelectionPageState, (), Option<Station>> for SelectionPage {
     fn handle(
         &mut self,
         event: Event,
         state: Option<&mut SelectionPageState>,
-    ) -> ControlFlow<(), Option<Data>> {
+    ) -> ControlFlow<(), Option<Station>> {
         let state = state.unwrap();
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
