@@ -19,7 +19,7 @@ use allerta_meteo::{
     event_handler_trait::MutStatefulEventHandler,
     graph::{GraphPage, GraphPageState},
     table::{SelectionPage, SelectionPageState},
-    Station,
+    Station, TimeSeries, TimeValue,
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
@@ -85,14 +85,14 @@ impl Page {
 }
 
 struct App<const N: usize> {
-    pages: [Page; N],
+    pages: [Option<Page>; N],
     page_idx: usize,
     colors: TableColors,
     color_index: usize,
 }
 
 impl<const N: usize> App<N> {
-    pub fn new(pages: [Page; N]) -> Self {
+    pub fn new(pages: [Option<Page>; N]) -> Self {
         Self {
             pages,
             page_idx: 0,
@@ -101,17 +101,23 @@ impl<const N: usize> App<N> {
         }
     }
     pub fn render(&mut self, frame: &mut Frame) {
-        self.pages[self.page_idx].render(frame.size(), frame.buffer_mut());
+        self.pages[self.page_idx]
+            .as_mut()
+            .unwrap()
+            .render(frame.size(), frame.buffer_mut());
     }
     pub fn handle_event(&mut self, event: Event) -> ControlFlow<(), ()> {
-        match &mut self.pages[self.page_idx] {
+        match &mut self.pages[self.page_idx].as_mut().unwrap() {
             Page::Selection(state) => match (SelectionPage {}).handle(event, Some(state)) {
                 ControlFlow::Continue(data) => {
                     if data.is_some() {
                         // TODO: create GraphPageState getting the data from the api
-                        // https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/?stazione=-/1129579,4472121/simnbo&variabile=254,0,0/1,-,-,-/B13215
-
-                        // self.pages[1] = Page::Graph(GraphPageState::default());
+                        let station = state.get_selected_data().unwrap();
+                        let values:Vec<TimeValue> = reqwest::blocking::get(format!("https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/?stazione={}&variabile=254,0,0/1,-,-,-/B13215",station.idstazione())).unwrap().json::<Vec<TimeValue>>().unwrap();
+                        self.pages[1] = Some(Page::Graph(GraphPageState::new(
+                            station,
+                            TimeSeries::new(values),
+                        )));
                         self.page_idx = 1;
                     }
                     ControlFlow::Continue(())
@@ -150,8 +156,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let app = App::<2>::new([
-        Page::Selection(SelectionPageState::new(stations)),
-        Page::Graph(GraphPageState::new(0.1, 1.)),
+        Some(Page::Selection(SelectionPageState::new(stations))),
+        None,
     ]);
     let res = run_app(&mut terminal, app);
 
