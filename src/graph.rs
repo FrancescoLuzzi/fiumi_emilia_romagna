@@ -28,6 +28,9 @@ use std::ops::ControlFlow;
 pub struct GraphPageState {
     station: Station,
     data: Vec<(f64, f64)>,
+    soglia1_data: Vec<(f64, f64)>,
+    soglia2_data: Vec<(f64, f64)>,
+    soglia3_data: Vec<(f64, f64)>,
 
     window: [f64; 2],
 }
@@ -35,9 +38,25 @@ pub struct GraphPageState {
 impl GraphPageState {
     pub fn new(station: Station, data: TimeSeries) -> Self {
         let size = data.0.len() as f64;
+        let data = data.as_dataset();
+        let soglia1_data: Vec<(f64, f64)> = (0..data.len())
+            .into_iter()
+            .map(|i| (i as f64, *station.soglia1() as f64))
+            .collect();
+        let soglia2_data: Vec<(f64, f64)> = (0..data.len())
+            .into_iter()
+            .map(|i| (i as f64, *station.soglia2() as f64))
+            .collect();
+        let soglia3_data: Vec<(f64, f64)> = (0..data.len())
+            .into_iter()
+            .map(|i| (i as f64, *station.soglia3() as f64))
+            .collect();
         Self {
             station,
-            data: data.as_dataset(),
+            data,
+            soglia1_data,
+            soglia2_data,
+            soglia3_data,
             window: [0.0, size],
         }
     }
@@ -61,11 +80,28 @@ impl StatefulWidgetRef for GraphPage {
                 Style::default().yellow().add_modifier(Modifier::BOLD),
             ),
         ];
-        let datasets = vec![Dataset::default()
-            .name("data1")
-            .marker(symbols::Marker::Dot)
-            .style(Style::default().fg(Color::Cyan))
-            .data(&state.data)];
+        let datasets = vec![
+            Dataset::default()
+                .name("Rilevazione")
+                .marker(symbols::Marker::Dot)
+                .style(Style::default().fg(Color::Cyan))
+                .data(&state.data),
+            Dataset::default()
+                .name("Soglia1")
+                .marker(symbols::Marker::Braille)
+                .style(Style::default().fg(Color::Green))
+                .data(&state.soglia1_data),
+            Dataset::default()
+                .name("Soglia2")
+                .marker(symbols::Marker::Braille)
+                .style(Style::default().fg(Color::Yellow))
+                .data(&state.soglia2_data),
+            Dataset::default()
+                .name("Soglia3")
+                .marker(symbols::Marker::Braille)
+                .style(Style::default().fg(Color::Red))
+                .data(&state.soglia3_data),
+        ];
 
         let chart = Chart::new(datasets)
             .block(Block::bordered().title(state.station.nomestaz().cyan().bold()))

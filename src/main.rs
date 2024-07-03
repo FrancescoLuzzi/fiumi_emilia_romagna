@@ -13,7 +13,14 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
-use std::{default::Default, error::Error, io, ops::ControlFlow, time::Duration};
+use std::{
+    default::Default,
+    error::Error,
+    io,
+    ops::ControlFlow,
+    panic::{set_hook, take_hook},
+    time::Duration,
+};
 
 use allerta_meteo::{
     event_handler_trait::MutStatefulEventHandler,
@@ -113,7 +120,7 @@ impl<const N: usize> App<N> {
                     if data.is_some() {
                         // TODO: create GraphPageState getting the data from the api
                         let station = state.get_selected_data().unwrap();
-                        let values:Vec<TimeValue> = reqwest::blocking::get(format!("https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/?stazione={}&variabile=254,0,0/1,-,-,-/B13215",station.idstazione())).unwrap().json::<Vec<TimeValue>>().unwrap();
+                        let values:Vec<_> = reqwest::blocking::get(format!("https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/?stazione={}&variabile=254,0,0/1,-,-,-/B13215",station.idstazione())).unwrap().json::<Vec<TimeValue>>().unwrap();
                         self.pages[1] = Some(Page::Graph(GraphPageState::new(
                             station,
                             TimeSeries::new(values),
@@ -134,6 +141,26 @@ impl<const N: usize> App<N> {
     }
 }
 
+pub fn init_panic_hook() {
+    let original_hook = take_hook();
+    set_hook(Box::new(move |panic_info| {
+        // intentionally ignore errors here since we're already in a panic
+        let _ = restore_tui();
+        original_hook(panic_info);
+    }));
+}
+pub fn init_tui() -> io::Result<Terminal<impl Backend>> {
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    Terminal::new(CrosstermBackend::new(io::stdout()))
+}
+
+pub fn restore_tui() -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen)?;
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let now = chrono::Local::now().timestamp_millis();
     let mut call = reqwest::Url::parse(
@@ -147,12 +174,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     if stations.is_empty() {
         return Ok(());
     }
+    init_panic_hook();
     // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = init_tui()?;
 
     // create app and run it
     let app = App::<2>::new([
@@ -162,12 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let res = run_app(&mut terminal, app);
 
     // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    restore_tui()?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {

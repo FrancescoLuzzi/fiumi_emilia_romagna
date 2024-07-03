@@ -1,9 +1,10 @@
 pub mod event_handler_trait;
 pub mod graph;
 pub mod table;
-use std::f64;
+use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Station {
     idstazione: String,
     ordinamento: usize,
@@ -48,10 +49,19 @@ impl Station {
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
+fn de_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    Ok(match Value::deserialize(deserializer)? {
+        Value::Number(num) => num.as_u64().ok_or(de::Error::custom("Invalid number"))?,
+        Value::String(s) => s.parse::<u64>().map_err(de::Error::custom)?,
+        _ => return Err(de::Error::custom("wrong type")),
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TimeValue {
+    #[serde(deserialize_with = "de_timestamp")]
     t: u64,
-    v: f64,
+    v: Option<f64>,
 }
 
 pub struct TimeSeries(Vec<TimeValue>);
@@ -61,10 +71,11 @@ impl TimeSeries {
         Self(data)
     }
     pub fn as_dataset(self) -> Vec<(f64, f64)> {
-        let t0 = self.0.first().unwrap().t;
+        let _t0 = self.0.first().unwrap().t;
         self.0
             .into_iter()
-            .map(|tv| (f64::from((tv.t - t0) as u32), tv.v))
+            .enumerate()
+            .map(|(i, tv)| (i as f64, tv.v.unwrap_or(0.)))
             .collect()
     }
 }

@@ -90,7 +90,7 @@ fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
         item.into_iter()
             .map(|content| Cell::from(Text::from(format!("\n{content}\n"))))
             .collect::<Row>()
-            .height(4)
+            .height(ITEM_HEIGHT as u16)
     });
     let bar = " █ ";
     let t = Table::new(
