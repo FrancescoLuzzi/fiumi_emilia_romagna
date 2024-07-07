@@ -6,6 +6,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Margin, Rect},
+    style::{palette::tailwind, Color},
     text::{Line, Text},
     widgets::{
         Block, BorderType, Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation,
@@ -87,10 +88,17 @@ fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
     .height(1);
     let rows = state.items.iter().map(|data| {
         let item = data.ref_array();
+        let style = match data.value().unwrap_or(&f32::MIN) {
+            _x if _x > data.soglia3() => tailwind::RED.c500,
+            _x if _x > data.soglia2() => tailwind::YELLOW.c500,
+            _x if _x > data.soglia1() => tailwind::GREEN.c500,
+            _ => tailwind::GREEN.c300,
+        };
         item.into_iter()
             .map(|content| Cell::from(Text::from(format!("\n{content}\n"))))
             .collect::<Row>()
             .height(ITEM_HEIGHT as u16)
+            .style(style)
     });
     let bar = " █ ";
     let t = Table::new(
@@ -112,6 +120,7 @@ fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
         "".into(),
     ]))
     .highlight_spacing(HighlightSpacing::Always);
+
     StatefulWidgetRef::render_ref(&t, area, b, &mut state.table_state);
 }
 

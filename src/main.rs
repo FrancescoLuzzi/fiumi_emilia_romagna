@@ -32,14 +32,14 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     buffer::Buffer,
     crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+        event::{self, EnableMouseCapture, Event},
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
-    layout::{Constraint, Layout, Margin, Rect},
+    layout::Rect,
     style::{palette::tailwind, Color},
     terminal::{Frame, Terminal},
-    widgets::{StatefulWidgetRef, WidgetRef},
+    widgets::StatefulWidgetRef,
 };
 
 const PALETTES: [tailwind::Palette; 4] = [
@@ -161,6 +161,20 @@ pub fn restore_tui() -> io::Result<()> {
     Ok(())
 }
 
+fn run_app<B: Backend, const N: usize>(
+    terminal: &mut Terminal<B>,
+    mut app: App<N>,
+) -> io::Result<()> {
+    loop {
+        terminal.draw(|f| app.render(f))?;
+        if crossterm::event::poll(Duration::new(0, 1_500_000))? {
+            if let ControlFlow::Break(_) = app.handle_event(event::read()?) {
+                return Ok(());
+            }
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let now = chrono::Local::now().timestamp_millis();
     let mut call = reqwest::Url::parse(
@@ -170,7 +184,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     call.query_pairs_mut()
         .encoding_override(Some(&|s| s.as_bytes().into()))
         .append_pair("time", &now.to_string());
-    let stations: Vec<Station> = reqwest::blocking::get(call)?.json::<Vec<_>>()?;
+    let mut stations: Vec<Station> = reqwest::blocking::get(call)?.json::<Vec<_>>()?;
+    stations.sort();
     if stations.is_empty() {
         return Ok(());
     }
@@ -194,18 +209,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-fn run_app<B: Backend, const N: usize>(
-    terminal: &mut Terminal<B>,
-    mut app: App<N>,
-) -> io::Result<()> {
-    loop {
-        terminal.draw(|f| app.render(f))?;
-        if crossterm::event::poll(Duration::new(0, 1_500_000))? {
-            if let ControlFlow::Break(_) = app.handle_event(event::read()?) {
-                return Ok(());
-            }
-        }
-    }
 }

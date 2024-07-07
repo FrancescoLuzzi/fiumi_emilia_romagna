@@ -49,6 +49,26 @@ impl Station {
     }
 }
 
+impl PartialEq for Station {
+    fn eq(&self, other: &Self) -> bool {
+        self.idstazione == other.idstazione && self.ordinamento == other.ordinamento
+    }
+}
+
+impl Eq for Station {}
+
+impl PartialOrd for Station {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Station {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordinamento.cmp(&other.ordinamento)
+    }
+}
+
 fn de_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
         Value::Number(num) => num.as_u64().ok_or(de::Error::custom("Invalid number"))?,
