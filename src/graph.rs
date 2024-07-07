@@ -40,15 +40,12 @@ impl GraphPageState {
         let size = data.0.len() as f64;
         let data = data.as_dataset();
         let soglia1_data: Vec<(f64, f64)> = (0..data.len())
-            .into_iter()
             .map(|i| (i as f64, *station.soglia1() as f64))
             .collect();
         let soglia2_data: Vec<(f64, f64)> = (0..data.len())
-            .into_iter()
             .map(|i| (i as f64, *station.soglia2() as f64))
             .collect();
         let soglia3_data: Vec<(f64, f64)> = (0..data.len())
-            .into_iter()
             .map(|i| (i as f64, *station.soglia3() as f64))
             .collect();
         Self {
