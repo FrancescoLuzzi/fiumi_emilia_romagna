@@ -89,10 +89,10 @@ fn render_table(b: &mut Buffer, state: &mut SelectionPageState, area: Rect) {
     let rows = state.items.iter().map(|data| {
         let item = data.ref_array();
         let style = match data.value().unwrap_or(&f32::MIN) {
-            _x if _x > data.soglia3() => tailwind::RED.c500,
-            _x if _x > data.soglia2() => tailwind::YELLOW.c500,
-            _x if _x > data.soglia1() => tailwind::GREEN.c500,
-            _ => tailwind::GREEN.c300,
+            _x if _x > data.soglia3() => tailwind::VIOLET.c500,
+            _x if _x > data.soglia2() => tailwind::RED.c500,
+            _x if _x > data.soglia1() => tailwind::YELLOW.c500,
+            _ => tailwind::GREEN.c500,
         };
         item.into_iter()
             .map(|content| Cell::from(Text::from(format!("\n{content}\n"))))
