@@ -32,7 +32,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     buffer::Buffer,
     crossterm::{
-        event::{self, EnableMouseCapture, Event},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event},
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
@@ -157,7 +157,7 @@ pub fn init_tui() -> io::Result<Terminal<impl Backend>> {
 
 pub fn restore_tui() -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
 
