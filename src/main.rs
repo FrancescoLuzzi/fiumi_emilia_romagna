@@ -13,14 +13,6 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
-use std::{
-    error::Error,
-    io,
-    ops::ControlFlow,
-    panic::{set_hook, take_hook},
-    time::Duration,
-};
-
 use allerta_meteo::{
     event_handler_trait::MutStatefulEventHandler,
     graph::{GraphPage, GraphPageState},
@@ -39,6 +31,14 @@ use ratatui::{
     layout::Rect,
     terminal::{Frame, Terminal},
     widgets::StatefulWidgetRef,
+};
+use std::cmp::Reverse;
+use std::{
+    error::Error,
+    io,
+    ops::ControlFlow,
+    panic::{set_hook, take_hook},
+    time::Duration,
 };
 
 enum Page {
@@ -164,7 +164,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if stations.0.is_empty() {
         return Ok(());
     }
-    stations.0.sort();
+    stations.0.sort_by(|a, b| b.cmp(a));
     init_panic_hook();
     // setup terminal
     let mut terminal = init_tui()?;

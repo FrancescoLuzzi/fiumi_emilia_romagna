@@ -48,11 +48,29 @@ impl Station {
     pub fn soglia3(&self) -> &f32 {
         &self.soglia3
     }
+    fn score(&self) -> u8 {
+        let value = self.value;
+        if value.is_none() {
+            return 0;
+        }
+        let mut outval: u8 = 0;
+        let value = value.unwrap();
+        if value > self.soglia1 {
+            outval |= 0b0010;
+        }
+        if value > self.soglia2 {
+            outval |= 0b0100;
+        }
+        if value > self.soglia3 {
+            outval |= 0b1000;
+        }
+        outval
+    }
 }
 
 impl PartialEq for Station {
     fn eq(&self, other: &Self) -> bool {
-        self.idstazione == other.idstazione && self.ordinamento == other.ordinamento
+        self.idstazione == other.idstazione
     }
 }
 
@@ -66,7 +84,14 @@ impl PartialOrd for Station {
 
 impl Ord for Station {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ordinamento.cmp(&other.ordinamento)
+        let mut out = self.score().cmp(&other.score());
+        if matches!(out, std::cmp::Ordering::Equal) {
+            out = self
+                .value
+                .partial_cmp(&other.value)
+                .unwrap_or(std::cmp::Ordering::Less);
+        }
+        out
     }
 }
 
