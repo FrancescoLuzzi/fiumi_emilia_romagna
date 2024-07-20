@@ -3,6 +3,7 @@ pub mod graph;
 pub mod table;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use serde_with::{serde_as, VecSkipError};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Station {
@@ -68,6 +69,10 @@ impl Ord for Station {
         self.ordinamento.cmp(&other.ordinamento)
     }
 }
+
+#[serde_as]
+#[derive(Deserialize, Serialize)]
+pub struct Stations(#[serde_as(as = "VecSkipError<_>")] pub Vec<Station>);
 
 fn de_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
