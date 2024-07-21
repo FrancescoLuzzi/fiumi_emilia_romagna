@@ -1,8 +1,38 @@
+pub mod cli;
 pub mod event_handler_trait;
 pub mod graph;
 pub mod table;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+
+#[derive(thiserror::Error, Debug)]
+pub enum StationsError {
+    #[error("Couldn't get stations")]
+    DecodeError(#[from] reqwest::Error),
+    #[error("Couldn't parse url")]
+    ParseError(#[from] url::ParseError),
+}
+
+pub fn get_stations<T>(time: chrono::DateTime<T>) -> Result<Vec<Station>, StationsError>
+where
+    T: chrono::TimeZone,
+{
+    let now = time.timestamp_millis();
+    let mut call = reqwest::Url::parse(
+        "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values?variabile=254,0,0/1,-,-,-/B13215",
+    )?;
+    call.query_pairs_mut()
+        .encoding_override(Some(&|s| s.as_bytes().into()))
+        .append_pair("time", &now.to_string());
+    let mut stations: Vec<Station> = reqwest::blocking::get(call)?.json::<Vec<_>>()?;
+    stations.sort();
+    Ok(stations)
+}
+
+pub fn get_stations_now() -> Result<Vec<Station>, StationsError> {
+    let now = chrono::Local::now();
+    get_stations(now)
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Station {

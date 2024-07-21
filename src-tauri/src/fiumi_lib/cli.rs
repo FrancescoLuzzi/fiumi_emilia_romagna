@@ -22,7 +22,7 @@ use std::{
     time::Duration,
 };
 
-use allerta_meteo::{
+use crate::fiumi_lib::{
     event_handler_trait::MutStatefulEventHandler,
     graph::{GraphPage, GraphPageState},
     table::{SelectionPage, SelectionPageState},
@@ -175,7 +175,7 @@ fn run_app<B: Backend, const N: usize>(
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+pub fn run_cli() -> Result<(), Box<dyn Error>> {
     let now = chrono::Local::now().timestamp_millis();
     let mut call = reqwest::Url::parse(
         "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values?variabile=254,0,0/1,-,-,-/B13215",

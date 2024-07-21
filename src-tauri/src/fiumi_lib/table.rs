@@ -1,12 +1,11 @@
 use std::ops::ControlFlow;
 
-use crate::event_handler_trait::MutStatefulEventHandler;
-use crate::Station;
+use crate::fiumi_lib::{event_handler_trait::MutStatefulEventHandler, Station};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Margin, Rect},
-    style::{palette::tailwind, Color},
+    style::palette::tailwind,
     text::{Line, Text},
     widgets::{
         Block, BorderType, Cell, HighlightSpacing, Paragraph, Row, Scrollbar, ScrollbarOrientation,
