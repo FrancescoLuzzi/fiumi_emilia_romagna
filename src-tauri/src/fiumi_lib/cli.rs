@@ -13,8 +13,27 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
+use crate::fiumi_lib::{
+    event_handler_trait::MutStatefulEventHandler,
+    graph::{GraphPage, GraphPageState},
+    table::{SelectionPage, SelectionPageState},
+    Stations, TimeSeries, TimeValue,
+};
+use chrono::{DurationRound, TimeDelta};
+use ratatui::{
+    backend::{Backend, CrosstermBackend},
+    buffer::Buffer,
+    crossterm::{
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    },
+    layout::Rect,
+    terminal::{Frame, Terminal},
+    widgets::StatefulWidgetRef,
+};
+use std::cmp::Reverse;
 use std::{
-    default::Default,
     error::Error,
     io,
     ops::ControlFlow,
@@ -22,58 +41,6 @@ use std::{
     time::Duration,
 };
 
-use crate::fiumi_lib::{
-    event_handler_trait::MutStatefulEventHandler,
-    graph::{GraphPage, GraphPageState},
-    table::{SelectionPage, SelectionPageState},
-    Station, TimeSeries, TimeValue,
-};
-use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    buffer::Buffer,
-    crossterm::{
-        event::{self, EnableMouseCapture, Event},
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    },
-    layout::Rect,
-    style::{palette::tailwind, Color},
-    terminal::{Frame, Terminal},
-    widgets::StatefulWidgetRef,
-};
-
-const PALETTES: [tailwind::Palette; 4] = [
-    tailwind::BLUE,
-    tailwind::EMERALD,
-    tailwind::INDIGO,
-    tailwind::RED,
-];
-#[derive(Default)]
-pub struct TableColors {
-    buffer_bg: Color,
-    header_bg: Color,
-    header_fg: Color,
-    row_fg: Color,
-    selected_style_fg: Color,
-    normal_row_color: Color,
-    alt_row_color: Color,
-    footer_border_color: Color,
-}
-
-impl TableColors {
-    pub const fn new(color: &tailwind::Palette) -> Self {
-        Self {
-            buffer_bg: tailwind::SLATE.c950,
-            header_bg: color.c900,
-            header_fg: tailwind::SLATE.c200,
-            row_fg: tailwind::SLATE.c200,
-            selected_style_fg: color.c400,
-            normal_row_color: tailwind::SLATE.c950,
-            alt_row_color: tailwind::SLATE.c900,
-            footer_border_color: color.c400,
-        }
-    }
-}
 enum Page {
     Selection(SelectionPageState),
     Graph(GraphPageState),
@@ -94,18 +61,11 @@ impl Page {
 struct App<const N: usize> {
     pages: [Option<Page>; N],
     page_idx: usize,
-    colors: TableColors,
-    color_index: usize,
 }
 
 impl<const N: usize> App<N> {
     pub fn new(pages: [Option<Page>; N]) -> Self {
-        Self {
-            pages,
-            page_idx: 0,
-            colors: TableColors::new(&PALETTES[0]),
-            color_index: 0,
-        }
+        Self { pages, page_idx: 0 }
     }
     pub fn render(&mut self, frame: &mut Frame) {
         self.pages[self.page_idx]
@@ -157,7 +117,7 @@ pub fn init_tui() -> io::Result<Terminal<impl Backend>> {
 
 pub fn restore_tui() -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
 }
 
@@ -176,26 +136,42 @@ fn run_app<B: Backend, const N: usize>(
 }
 
 pub fn run_cli() -> Result<(), Box<dyn Error>> {
-    let now = chrono::Local::now().timestamp_millis();
-    let mut call = reqwest::Url::parse(
-        "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values?variabile=254,0,0/1,-,-,-/B13215",
+    let mut now = chrono::Utc::now();
+    let delta_15_mins = TimeDelta::try_minutes(15).unwrap();
+    now -= delta_15_mins;
+    now = now.duration_trunc(TimeDelta::try_minutes(15).unwrap())?;
+    let base_call = reqwest::Url::parse(
+        "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values-no-time?variabile=254,0,0/1,-,-,-/B13215",
     )
     .unwrap();
+    let mut call = base_call.clone();
     call.query_pairs_mut()
-        .encoding_override(Some(&|s| s.as_bytes().into()))
-        .append_pair("time", &now.to_string());
-    let mut stations: Vec<Station> = reqwest::blocking::get(call)?.json::<Vec<_>>()?;
-    stations.sort();
-    if stations.is_empty() {
+        .append_pair("time", &now.timestamp_millis().to_string());
+    let mut stations: Stations = reqwest::blocking::get(call.clone())?.json()?;
+    while stations
+        .0
+        .iter()
+        .filter(|s| s.value().is_some())
+        .count()
+        .lt(&10)
+    {
+        now -= delta_15_mins;
+        let mut call = base_call.clone();
+        call.query_pairs_mut()
+            .append_pair("time", &now.timestamp_millis().to_string());
+        stations = reqwest::blocking::get(call.clone())?.json()?;
+    }
+    if stations.0.is_empty() {
         return Ok(());
     }
+    stations.0.sort_by(|a, b| b.cmp(a));
     init_panic_hook();
     // setup terminal
     let mut terminal = init_tui()?;
 
     // create app and run it
     let app = App::<2>::new([
-        Some(Page::Selection(SelectionPageState::new(stations))),
+        Some(Page::Selection(SelectionPageState::new(stations.0))),
         None,
     ]);
     let res = run_app(&mut terminal, app);

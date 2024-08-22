@@ -4,6 +4,7 @@ pub mod graph;
 pub mod table;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use serde_with::{serde_as, VecSkipError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum StationsError {
@@ -77,11 +78,29 @@ impl Station {
     pub fn soglia3(&self) -> &f32 {
         &self.soglia3
     }
+    fn score(&self) -> u8 {
+        let value = self.value;
+        if value.is_none() {
+            return 0;
+        }
+        let mut outval: u8 = 0;
+        let value = value.unwrap();
+        if value > self.soglia1 {
+            outval |= 0b0010;
+        }
+        if value > self.soglia2 {
+            outval |= 0b0100;
+        }
+        if value > self.soglia3 {
+            outval |= 0b1000;
+        }
+        outval
+    }
 }
 
 impl PartialEq for Station {
     fn eq(&self, other: &Self) -> bool {
-        self.idstazione == other.idstazione && self.ordinamento == other.ordinamento
+        self.idstazione == other.idstazione
     }
 }
 
@@ -95,9 +114,20 @@ impl PartialOrd for Station {
 
 impl Ord for Station {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ordinamento.cmp(&other.ordinamento)
+        let mut out = self.score().cmp(&other.score());
+        if matches!(out, std::cmp::Ordering::Equal) {
+            out = self
+                .value
+                .partial_cmp(&other.value)
+                .unwrap_or(std::cmp::Ordering::Less);
+        }
+        out
     }
 }
+
+#[serde_as]
+#[derive(Deserialize, Serialize)]
+pub struct Stations(#[serde_as(as = "VecSkipError<_>")] pub Vec<Station>);
 
 fn de_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
     Ok(match Value::deserialize(deserializer)? {

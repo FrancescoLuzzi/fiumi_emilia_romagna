@@ -18,7 +18,6 @@ const INFO_TEXT: &str = "(Esc) quit | (↑) move up | (↓) move down | (󱞣) s
 
 const ITEM_HEIGHT: usize = 4;
 
-#[derive(Default)]
 pub struct SelectionPageState {
     table_state: TableState,
     items: Vec<Station>,
@@ -27,12 +26,12 @@ pub struct SelectionPageState {
 }
 
 impl SelectionPageState {
-    pub fn new(stations: Vec<Station>) -> Self {
+    pub fn new(items: Vec<Station>) -> Self {
         Self {
             table_state: TableState::default().with_selected(0),
-            longest_item_lens: constraint_len_calculator(&stations),
-            scroll_state: ScrollbarState::new((stations.len().saturating_sub(1)) * ITEM_HEIGHT),
-            items: stations,
+            longest_item_lens: constraint_len_calculator(&items),
+            scroll_state: ScrollbarState::new((items.len().saturating_sub(1)) * ITEM_HEIGHT),
+            items,
         }
     }
     pub fn next(&mut self) {
