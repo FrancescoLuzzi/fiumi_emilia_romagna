@@ -1,14 +1,13 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod fiumi_lib;
-mod launch_options;
+use app_lib::fiumi_lib;
 use argh::{from_env, FromArgs};
 
 #[derive(FromArgs)]
-/// Launch also as cli
+/// Controlla lo stato dei fiumi in emilia romagna
 struct Args {
-    /// whether or not to jump
+    /// esegui app in TUI
     #[argh(switch)]
     cli: bool,
 }

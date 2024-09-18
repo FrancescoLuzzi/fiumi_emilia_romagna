@@ -13,7 +13,8 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
-use crate::fiumi_lib::{event_handler_trait::MutStatefulEventHandler, Station, TimeSeries};
+use crate::fiumi_lib::event_handler_trait::MutStatefulEventHandler;
+use crate::model::{Station, TimeSeries};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -122,7 +123,7 @@ impl StatefulWidgetRef for GraphPage {
 }
 
 impl MutStatefulEventHandler<GraphPageState, (), ()> for GraphPage {
-    fn handle(
+    fn handle_mut(
         &mut self,
         event: crossterm::event::Event,
         _state: Option<&mut GraphPageState>,

@@ -13,11 +13,14 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
-use crate::fiumi_lib::{
-    event_handler_trait::MutStatefulEventHandler,
-    graph::{GraphPage, GraphPageState},
-    table::{SelectionPage, SelectionPageState},
-    Stations, TimeSeries, TimeValue,
+use crate::{
+    api::get_station_timeseries,
+    fiumi_lib::{
+        event_handler_trait::MutStatefulEventHandler,
+        graph::{GraphPage, GraphPageState},
+        table::{SelectionPage, SelectionPageState},
+    },
+    model::Stations,
 };
 use chrono::{DurationRound, TimeDelta};
 use ratatui::{
@@ -32,7 +35,6 @@ use ratatui::{
     terminal::{Frame, Terminal},
     widgets::StatefulWidgetRef,
 };
-use std::cmp::Reverse;
 use std::{
     error::Error,
     io,
@@ -75,16 +77,13 @@ impl<const N: usize> App<N> {
     }
     pub fn handle_event(&mut self, event: Event) -> ControlFlow<(), ()> {
         match &mut self.pages[self.page_idx].as_mut().unwrap() {
-            Page::Selection(state) => match (SelectionPage {}).handle(event, Some(state)) {
+            Page::Selection(state) => match (SelectionPage {}).handle_mut(event, Some(state)) {
                 ControlFlow::Continue(data) => {
                     if data.is_some() {
                         // TODO: create GraphPageState getting the data from the api
                         let station = state.get_selected_data().unwrap();
-                        let values:Vec<_> = reqwest::blocking::get(format!("https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/?stazione={}&variabile=254,0,0/1,-,-,-/B13215",station.idstazione())).unwrap().json::<Vec<TimeValue>>().unwrap();
-                        self.pages[1] = Some(Page::Graph(GraphPageState::new(
-                            station,
-                            TimeSeries::new(values),
-                        )));
+                        let data = get_station_timeseries(&station).unwrap();
+                        self.pages[1] = Some(Page::Graph(GraphPageState::new(station, data)));
                         self.page_idx = 1;
                     }
                     ControlFlow::Continue(())
@@ -92,7 +91,7 @@ impl<const N: usize> App<N> {
                 ControlFlow::Break(_) => ControlFlow::Break(()),
             },
             Page::Graph(state) => {
-                if let ControlFlow::Break(_) = (GraphPage {}).handle(event, Some(state)) {
+                if let ControlFlow::Break(_) = (GraphPage {}).handle_mut(event, Some(state)) {
                     self.page_idx = 0;
                 }
                 ControlFlow::Continue(())

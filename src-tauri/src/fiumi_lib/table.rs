@@ -1,6 +1,7 @@
 use std::ops::ControlFlow;
 
-use crate::fiumi_lib::{event_handler_trait::MutStatefulEventHandler, Station};
+use crate::fiumi_lib::event_handler_trait::MutStatefulEventHandler;
+use crate::model::Station;
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -191,6 +192,7 @@ fn render_footer(b: &mut Buffer, area: Rect) {
 }
 
 pub struct SelectionPage {}
+
 impl StatefulWidgetRef for SelectionPage {
     type State = SelectionPageState;
     fn render_ref(&self, area: Rect, buf: &mut Buffer, state: &mut Self::State)
@@ -208,7 +210,7 @@ impl StatefulWidgetRef for SelectionPage {
 }
 
 impl MutStatefulEventHandler<SelectionPageState, (), Option<Station>> for SelectionPage {
-    fn handle(
+    fn handle_mut(
         &mut self,
         event: Event,
         state: Option<&mut SelectionPageState>,

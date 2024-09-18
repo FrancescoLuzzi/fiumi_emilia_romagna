@@ -1,3 +1,7 @@
+pub mod api;
+pub mod fiumi_lib;
+pub mod model;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
