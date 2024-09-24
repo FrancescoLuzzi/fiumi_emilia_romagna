@@ -1,11 +1,8 @@
-use crate::{
-    api::error::StationsError,
-    model::{Station, TimeSeries, TimeValue},
-};
-
 mod error;
+pub use crate::api::error::StationsError;
+use crate::model::{Station, Stations, TimeSeries, TimeValue};
 
-pub fn get_stations<T>(time: chrono::DateTime<T>) -> Result<Vec<Station>, error::StationsError>
+pub fn get_stations<T>(time: chrono::DateTime<T>) -> Result<Stations, error::StationsError>
 where
     T: chrono::TimeZone,
 {
@@ -18,7 +15,7 @@ where
         .append_pair("time", &now.to_string());
     let mut stations: Vec<Station> = reqwest::blocking::get(call)?.json::<Vec<_>>()?;
     stations.sort();
-    Ok(stations)
+    Ok(Stations(stations))
 }
 
 pub fn get_station_timeseries(station: &Station) -> Result<TimeSeries, error::StationsError> {
@@ -26,7 +23,7 @@ pub fn get_station_timeseries(station: &Station) -> Result<TimeSeries, error::St
     Ok(TimeSeries::new(time_series))
 }
 
-pub fn get_stations_now() -> Result<Vec<Station>, StationsError> {
+pub fn get_stations_now() -> Result<Stations, StationsError> {
     let now = chrono::Local::now();
     get_stations(now)
 }

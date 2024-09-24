@@ -111,6 +111,7 @@ pub struct TimeValue {
     v: Option<f64>,
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct TimeSeries(pub Vec<TimeValue>);
 
 impl TimeSeries {
