@@ -6,6 +6,8 @@ pub enum StationsError {
     Parse(#[from] url::ParseError),
     #[error("Couldn't parse timeseries")]
     Timeseries(#[from] serde_json::Error),
+    #[error("Unknown error: {0}")]
+    Unknown(String),
 }
 
 impl serde::Serialize for StationsError {

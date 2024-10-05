@@ -14,7 +14,7 @@
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
 use crate::{
-    api::get_station_timeseries,
+    api::{get_station_timeseries, get_stations},
     fiumi_lib::{
         event_handler_trait::MutStatefulEventHandler,
         graph::{GraphPage, GraphPageState},
@@ -135,18 +135,11 @@ fn run_app<B: Backend, const N: usize>(
 }
 
 pub fn run_cli() -> Result<(), Box<dyn Error>> {
-    let mut now = chrono::Utc::now();
+    let mut now = chrono::Local::now();
     let delta_15_mins = TimeDelta::try_minutes(15).unwrap();
     now -= delta_15_mins;
     now = now.duration_trunc(TimeDelta::try_minutes(15).unwrap())?;
-    let base_call = reqwest::Url::parse(
-        "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values-no-time?variabile=254,0,0/1,-,-,-/B13215",
-    )
-    .unwrap();
-    let mut call = base_call.clone();
-    call.query_pairs_mut()
-        .append_pair("time", &now.timestamp_millis().to_string());
-    let mut stations: Stations = reqwest::blocking::get(call.clone())?.json()?;
+    let mut stations: Stations = get_stations(now)?;
     while stations
         .0
         .iter()
@@ -155,10 +148,7 @@ pub fn run_cli() -> Result<(), Box<dyn Error>> {
         .lt(&10)
     {
         now -= delta_15_mins;
-        let mut call = base_call.clone();
-        call.query_pairs_mut()
-            .append_pair("time", &now.timestamp_millis().to_string());
-        stations = reqwest::blocking::get(call.clone())?.json()?;
+        stations = get_stations(now)?;
     }
     if stations.0.is_empty() {
         return Ok(());

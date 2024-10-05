@@ -46,22 +46,20 @@ impl Station {
         &self.soglia3
     }
     fn score(&self) -> u8 {
-        let value = self.value;
-        if value.is_none() {
+        if self.value.is_none() {
             return 0;
         }
-        let mut outval: u8 = 0;
-        let value = value.unwrap();
-        if value > self.soglia1 {
-            outval |= 0b0010;
+        let value = self.value.unwrap();
+        if value > self.soglia3 {
+            return 0b1000;
         }
         if value > self.soglia2 {
-            outval |= 0b0100;
+            return 0b0100;
         }
-        if value > self.soglia3 {
-            outval |= 0b1000;
+        if value > self.soglia1 {
+            return 0b0010;
         }
-        outval
+        0
     }
 }
 

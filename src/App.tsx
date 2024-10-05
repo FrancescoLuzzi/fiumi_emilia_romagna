@@ -17,7 +17,7 @@ const router = createHashRouter([
         element: <Home />,
       },
       {
-        path: "timeseries/:station_id",
+        path: "timeseries",
         element: <Timeseries />,
       },
     ],

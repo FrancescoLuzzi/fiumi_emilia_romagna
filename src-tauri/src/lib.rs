@@ -1,5 +1,4 @@
 use api::StationsError;
-use chrono::Utc;
 use model::{Station, Stations, TimeSeries};
 
 pub mod api;
@@ -12,7 +11,7 @@ fn get_stations_now() -> Result<Stations, StationsError> {
 }
 
 #[tauri::command]
-fn get_stations(date: chrono::DateTime<Utc>) -> Result<Stations, StationsError> {
+fn get_stations(date: chrono::DateTime<chrono::Local>) -> Result<Stations, StationsError> {
     api::get_stations(date)
 }
 
