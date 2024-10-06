@@ -1,7 +1,7 @@
 {
   "productName": "FiumiAlert",
   "version": "0.1.0",
-  "identifier": "com.tauri.devvo",
+  "identifier": "com.tauri.fiumiEmiliaRomagna",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
