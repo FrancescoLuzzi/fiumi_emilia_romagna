@@ -32,8 +32,8 @@ use ratatui::{
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
     layout::Rect,
-    terminal::{Frame, Terminal},
     widgets::StatefulWidgetRef,
+    Frame, Terminal,
 };
 use std::{
     error::Error,
@@ -73,7 +73,7 @@ impl<const N: usize> App<N> {
         self.pages[self.page_idx]
             .as_mut()
             .unwrap()
-            .render(frame.size(), frame.buffer_mut());
+            .render(frame.area(), frame.buffer_mut());
     }
     pub fn handle_event(&mut self, event: Event) -> ControlFlow<(), ()> {
         match &mut self.pages[self.page_idx].as_mut().unwrap() {
