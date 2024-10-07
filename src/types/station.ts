@@ -11,3 +11,15 @@ export type Station = {
 };
 
 export type Stations = Station[];
+
+export const getSoglia1 = (station: Station): number => {
+  return station.soglia1 || station.soglia2 || station.soglia3;
+};
+
+export const getSoglia2 = (station: Station): number => {
+  return station.soglia2 || station.soglia3 || station.soglia1;
+};
+
+export const getSoglia3 = (station: Station): number => {
+  return station.soglia3 || station.soglia2 || station.soglia1;
+};
