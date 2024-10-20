@@ -45,3 +45,5 @@ Then the TUI can have a 2 mode logic:
 - load data from the internet in real time
 - load data from stored data in DB
 
+Use different chart library since Shadcn's are pretty slow,
+see https://canvasjs.com/react-charts/performance-demo-chart/
