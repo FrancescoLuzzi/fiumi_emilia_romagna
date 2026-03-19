@@ -1,0 +1,13 @@
+[package]
+name = "alert_tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alert_core = { path = "../alert_core" }
+anyhow = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+url = { workspace = true }
+chrono = { workspace = true }
+unicode-width = { workspace = true }
