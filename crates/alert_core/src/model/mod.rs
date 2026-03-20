@@ -16,15 +16,6 @@ pub struct Station {
 }
 
 impl Station {
-    pub fn ref_array(&self) -> [String; 5] {
-        [
-            self.nomestaz.clone(),
-            self.value.unwrap_or(0.0).to_string(),
-            self.soglia1.to_string(),
-            self.soglia2.to_string(),
-            self.soglia3.to_string(),
-        ]
-    }
     pub fn idstazione(&self) -> &str {
         &self.idstazione
     }
@@ -91,8 +82,34 @@ impl Ord for Station {
 }
 
 #[serde_as]
-#[derive(Deserialize, Serialize)]
-pub struct Stations(#[serde_as(as = "VecSkipError<_>")] pub Vec<Station>);
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Stations(#[serde_as(as = "VecSkipError<_>")] Vec<Station>);
+
+impl Stations {
+    pub fn new(stations: Vec<Station>) -> Self {
+        Self(stations)
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Station> {
+        self.0.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn into_vec(self) -> Vec<Station> {
+        self.0
+    }
+
+    pub fn sort_by_alert_desc(&mut self) {
+        self.0.sort_by(|a, b| b.cmp(a));
+    }
+}
 
 fn de_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
@@ -109,19 +126,41 @@ pub struct TimeValue {
     v: Option<f64>,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct TimeSeries(pub Vec<TimeValue>);
+impl TimeValue {
+    pub fn timestamp(&self) -> u64 {
+        self.t
+    }
+
+    pub fn value(&self) -> Option<f64> {
+        self.v
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct TimeSeries(Vec<TimeValue>);
 
 impl TimeSeries {
     pub fn new(data: Vec<TimeValue>) -> Self {
         Self(data)
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, TimeValue> {
+        self.0.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn as_dataset(self) -> Vec<(f64, f64)> {
-        let _t0 = self.0.first().unwrap().t;
         self.0
             .into_iter()
             .enumerate()
-            .map(|(i, tv)| (i as f64, tv.v.unwrap_or(0.)))
+            .map(|(i, tv)| (i as f64, tv.value().unwrap_or(0.0)))
             .collect()
     }
 }

@@ -1,4 +1,5 @@
+pub mod app;
 pub mod cli;
-pub mod event_handler_trait;
+pub mod config;
 pub mod graph;
 pub mod table;

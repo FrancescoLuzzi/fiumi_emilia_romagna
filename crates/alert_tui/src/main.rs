@@ -1,5 +1,7 @@
-use alert_tui::cli;
+use alert_tui::{cli, config};
 
-fn main() {
-    cli::run_tui().unwrap();
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    let args: config::Args = argh::from_env();
+    cli::run_tui(args).await.unwrap();
 }
