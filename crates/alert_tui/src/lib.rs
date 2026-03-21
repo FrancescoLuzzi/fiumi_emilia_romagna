@@ -1,5 +1,5 @@
 pub mod app;
 pub mod cli;
 pub mod config;
-pub mod graph;
-pub mod table;
+pub mod framework;
+pub mod pages;

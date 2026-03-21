@@ -38,9 +38,9 @@ pub async fn run_tui(args: config::Args) -> anyhow::Result<()> {
 
     init_panic_hook();
     let mut terminal = init_tui()?;
-    let (app, client, sender, receiver) = app::bootstrap().await;
+    let (app, sender, receiver) = app::bootstrap(config).await;
 
-    let result = app::run_app(&mut terminal, app, config, receiver, sender, client).await;
+    let result = app::run_app(&mut terminal, app, config, receiver, sender).await;
 
     restore_tui()?;
     terminal

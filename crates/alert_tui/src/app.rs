@@ -1,57 +1,79 @@
 use crate::{
     config::UiConfig,
-    graph::GraphPage,
-    table::SelectionPage,
-};
-use alert_core::{
-    api::{AlertClient, latest_station_time},
-    model::{Station, Stations, TimeSeries},
+    framework::{AppMessage, MultiPageFrame, PageModel, RenderablePageModel, Task, TaskKey, Update},
+    pages::{graph, graph::GraphPage, selection, selection::SelectionPage},
 };
 use anyhow::Context;
 use async_channel::{Receiver, Sender};
-use chrono::TimeDelta;
 use crossterm::event::Event;
-use ratatui::{
-    Frame, Terminal,
-    backend::Backend,
-    buffer::Buffer,
-    layout::Rect,
-};
-use std::time::Instant;
+use ratatui::{Frame, Terminal, backend::Backend, buffer::Buffer, layout::Rect};
+use std::{collections::HashMap, time::Instant};
+use tokio::task::JoinHandle;
 
 pub enum AppEvent {
-    Input(Event),
-    StationsLoaded(Stations),
-    TimeSeriesLoaded {
-        station_id: String,
-        series: TimeSeries,
-    },
-    LoadFailed {
-        scope: LoadScope,
-        message: String,
-    },
-    Quit,
+    Selection(selection::Message),
+    Graph(graph::Message),
 }
 
-#[derive(Clone)]
-pub enum LoadScope {
-    Stations,
-    TimeSeries { station_id: String },
+type Message = AppMessage<AppEvent>;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PageId {
+    Selection,
+    Graph,
 }
 
-pub enum UiAction {
-    Redraw,
-    Quit,
-    OpenGraph { station: Station },
-    BackToSelection,
-}
-
-enum Page {
+pub enum Page {
     Selection(SelectionPage),
     Graph(GraphPage),
 }
 
-impl Page {
+impl PageModel for Page {
+    type Action = PageAction;
+    type Message = Message;
+
+    fn init(&mut self) -> Update<Self::Action, Self::Message> {
+        match self {
+            Page::Selection(page) => page
+                .init()
+                .map_action(PageAction::Selection)
+                .map_message(|message| Message::AppEvent(AppEvent::Selection(message))),
+            Page::Graph(page) => page
+                .init()
+                .map_action(PageAction::Graph)
+                .map_message(|message| Message::AppEvent(AppEvent::Graph(message))),
+        }
+    }
+
+    fn handle_event(&mut self, event: Event) -> Update<Self::Action, Self::Message> {
+        match self {
+            Page::Selection(page) => page
+                .handle_event(event)
+                .map_action(PageAction::Selection)
+                .map_message(|message| Message::AppEvent(AppEvent::Selection(message))),
+            Page::Graph(page) => page
+                .handle_event(event)
+                .map_action(PageAction::Graph)
+                .map_message(|message| Message::AppEvent(AppEvent::Graph(message))),
+        }
+    }
+
+    fn update(&mut self, message: Self::Message) -> Update<Self::Action, Self::Message> {
+        match (self, message) {
+            (Page::Selection(page), Message::AppEvent(AppEvent::Selection(message))) => page
+                .update(message)
+                .map_action(PageAction::Selection)
+                .map_message(|message| Message::AppEvent(AppEvent::Selection(message))),
+            (Page::Graph(page), Message::AppEvent(AppEvent::Graph(message))) => page
+                .update(message)
+                .map_action(PageAction::Graph)
+                .map_message(|message| Message::AppEvent(AppEvent::Graph(message))),
+            (_, _) => Update::none(),
+        }
+    }
+}
+
+impl RenderablePageModel for Page {
     fn render(&mut self, area: Rect, buf: &mut Buffer) {
         match self {
             Page::Selection(page) => page.render(area, buf),
@@ -60,134 +82,106 @@ impl Page {
     }
 }
 
-pub struct App<const N: usize> {
-    pages: [Option<Page>; N],
-    page_idx: usize,
+pub enum PageAction {
+    Selection(selection::Action),
+    Graph(graph::Action),
 }
 
-impl<const N: usize> App<N> {
-    fn new(pages: [Option<Page>; N]) -> Self {
-        Self { pages, page_idx: 0 }
+pub struct App {
+    pages: MultiPageFrame<PageId, Page>,
+}
+
+impl App {
+    pub fn new(pages: MultiPageFrame<PageId, Page>) -> Self {
+        Self { pages }
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        self.pages[self.page_idx]
-            .as_mut()
-            .expect("page should be initialized")
-            .render(frame.area(), frame.buffer_mut());
+        self.pages.render(frame.area(), frame.buffer_mut());
     }
 
-    fn current_page_mut(&mut self) -> &mut Page {
-        self.pages[self.page_idx]
-            .as_mut()
-            .expect("page should be initialized")
+    pub fn active_page(&self) -> PageId {
+        self.pages.active_page()
     }
 
-    fn selection_page_mut(&mut self) -> &mut SelectionPage {
-        match self.pages[0].as_mut().expect("selection page should exist") {
-            Page::Selection(page) => page,
-            Page::Graph(_) => unreachable!("selection page index must contain selection state"),
+    fn show_selection(&mut self) {
+        let _ = self.pages.show(PageId::Selection);
+    }
+
+    fn show_graph(
+        &mut self,
+        station: alert_core::model::Station,
+    ) -> Update<PageAction, Message> {
+        self.pages
+            .insert_and_show(PageId::Graph, Page::Graph(GraphPage::loading(station)));
+        self.pages.init()
+    }
+
+    fn close_graph(&mut self) {
+        let _ = self.pages.remove_page(PageId::Graph);
+    }
+
+    fn handle_page_update(
+        &mut self,
+        update: Update<PageAction, Message>,
+    ) -> AppReaction {
+        let mut reaction = AppReaction {
+            redraw: update.redraw,
+            task: update.task,
+            ..AppReaction::default()
+        };
+
+        match update.action {
+            None => reaction,
+            Some(PageAction::Selection(selection::Action::Quit)) => {
+                reaction.should_quit = true;
+                reaction
+            }
+            Some(PageAction::Selection(selection::Action::OpenGraph { station })) => {
+                let init = self.show_graph(station);
+                reaction.redraw = true;
+                reaction.redraw |= init.redraw;
+                reaction.task = Task::batch([reaction.task, init.task]);
+                reaction
+            }
+            Some(PageAction::Graph(graph::Action::Back)) => {
+                self.close_graph();
+                self.show_selection();
+                reaction.redraw = true;
+                reaction
+            }
         }
     }
 
-    fn graph_page_mut(&mut self) -> Option<&mut GraphPage> {
-        match self.pages[1].as_mut()? {
-            Page::Graph(page) => Some(page),
-            Page::Selection(_) => None,
-        }
+    pub fn init(&mut self) -> AppReaction {
+        let update = self.pages.init();
+        self.handle_page_update(update)
     }
 
-    fn handle_action(&mut self, action: UiAction) -> AppReaction {
-        match action {
-            UiAction::Redraw => AppReaction {
-                redraw: true,
-                ..AppReaction::default()
-            },
-            UiAction::Quit => AppReaction {
+    pub fn handle_message(&mut self, message: Message) -> AppReaction {
+        match message {
+            Message::Input(event) => {
+                let update = self.pages.handle_event(event);
+                self.handle_page_update(update)
+            }
+            Message::AppEvent(AppEvent::Selection(message)) => self
+                .pages
+                .update_at(
+                    PageId::Selection,
+                    Message::AppEvent(AppEvent::Selection(message)),
+                )
+                .map(|update| self.handle_page_update(update))
+                .unwrap_or_default(),
+            Message::AppEvent(AppEvent::Graph(message)) => self
+                .pages
+                .update_at(PageId::Graph, Message::AppEvent(AppEvent::Graph(message)))
+                .map(|update| self.handle_page_update(update))
+                .unwrap_or_default(),
+            Message::Shutdown => AppReaction {
                 should_quit: true,
-                redraw: true,
-                ..AppReaction::default()
-            },
-            UiAction::OpenGraph { station } => {
-                let station_id = station.idstazione().to_owned();
-                self.pages[1] = Some(Page::Graph(GraphPage::loading(station)));
-                self.page_idx = 1;
-                AppReaction {
-                    redraw: true,
-                    load_request: Some(LoadScope::TimeSeries { station_id }),
-                    ..AppReaction::default()
-                }
-            }
-            UiAction::BackToSelection => {
-                self.page_idx = 0;
-                AppReaction {
-                    redraw: true,
-                    ..AppReaction::default()
-                }
-            }
-        }
-    }
-
-    pub fn handle_event(&mut self, event: AppEvent) -> AppReaction {
-        match event {
-            AppEvent::Input(event) => {
-                let action = match self.current_page_mut() {
-                    Page::Selection(page) => page.handle_event(event),
-                    Page::Graph(page) => page.handle_event(event),
-                };
-                self.handle_action(action)
-            }
-            AppEvent::StationsLoaded(mut stations) => {
-                stations.sort_by_alert_desc();
-                let selection = self.selection_page_mut();
-                selection.set_error(None);
-                selection.set_items(stations.into_vec());
-                AppReaction {
-                    redraw: true,
-                    ..AppReaction::default()
-                }
-            }
-            AppEvent::TimeSeriesLoaded { station_id, series } => {
-                if let Some(graph) = self.graph_page_mut() {
-                    if graph.station_id() == station_id {
-                        graph.set_series(series);
-                    }
-                }
-                AppReaction {
-                    redraw: true,
-                    ..AppReaction::default()
-                }
-            }
-            AppEvent::LoadFailed { scope, message } => {
-                match scope {
-                    LoadScope::Stations => {
-                        self.selection_page_mut().set_error(Some(message));
-                    }
-                    LoadScope::TimeSeries { station_id } => {
-                        if let Some(graph) = self.graph_page_mut() {
-                            if graph.station_id() == station_id {
-                                graph.set_error(message);
-                            }
-                        }
-                    }
-                }
-                AppReaction {
-                    redraw: true,
-                    ..AppReaction::default()
-                }
-            }
-            AppEvent::Quit => AppReaction {
-                should_quit: true,
-                redraw: false,
                 ..AppReaction::default()
             },
         }
-    }
-}
-
-impl App<2> {
-    pub fn with_default_pages() -> Self {
-        Self::new([Some(Page::Selection(SelectionPage::new(Vec::new()))), None])
     }
 }
 
@@ -195,20 +189,20 @@ impl App<2> {
 pub struct AppReaction {
     pub redraw: bool,
     pub should_quit: bool,
-    pub load_request: Option<LoadScope>,
+    pub task: Task<Message>,
 }
 
-pub async fn spawn_input_task(sender: Sender<AppEvent>) {
+pub async fn spawn_input_task(sender: Sender<Message>) {
     std::thread::spawn(move || {
         loop {
             match crossterm::event::read() {
                 Ok(event) => {
-                    if sender.send_blocking(AppEvent::Input(event)).is_err() {
+                    if sender.send_blocking(Message::Input(event)).is_err() {
                         break;
                     }
                 }
                 Err(_) => {
-                    let _ = sender.send_blocking(AppEvent::Quit);
+                    let _ = sender.send_blocking(Message::Shutdown);
                     break;
                 }
             }
@@ -216,87 +210,46 @@ pub async fn spawn_input_task(sender: Sender<AppEvent>) {
     });
 }
 
-fn visible_station_count(stations: &Stations) -> usize {
-    stations
-        .iter()
-        .filter(|station| station.value().is_some())
-        .count()
-}
-
-async fn load_initial_stations(client: AlertClient, sender: Sender<AppEvent>) {
-    let mut now = match latest_station_time(chrono::Local::now()) {
-        Ok(now) => now,
-        Err(error) => {
-            let _ = sender
-                .send(AppEvent::LoadFailed {
-                    scope: LoadScope::Stations,
-                    message: error.to_string(),
-                })
-                .await;
-            return;
-        }
-    };
-
-    let delta_15_mins = TimeDelta::try_minutes(15).expect("15 minutes should be valid");
-
-    loop {
-        match client.stations_at(now).await {
-            Ok(stations) if !stations.is_empty() && visible_station_count(&stations) >= 10 => {
-                let _ = sender.send(AppEvent::StationsLoaded(stations)).await;
-                return;
-            }
-            Ok(_) => {
-                now -= delta_15_mins;
-            }
-            Err(error) => {
-                let _ = sender
-                    .send(AppEvent::LoadFailed {
-                        scope: LoadScope::Stations,
-                        message: error.to_string(),
-                    })
-                    .await;
-                return;
-            }
-        }
-    }
-}
-
-async fn load_timeseries(client: AlertClient, sender: Sender<AppEvent>, station_id: String) {
-    match client.station_timeseries(&station_id).await {
-        Ok(series) => {
-            let _ = sender
-                .send(AppEvent::TimeSeriesLoaded { station_id, series })
-                .await;
-        }
-        Err(error) => {
-            let _ = sender
-                .send(AppEvent::LoadFailed {
-                    scope: LoadScope::TimeSeries { station_id },
-                    message: error.to_string(),
-                })
-                .await;
-        }
-    }
-}
-
-async fn apply_load_request(
-    client: &AlertClient,
-    sender: &Sender<AppEvent>,
-    load_request: LoadScope,
+async fn execute_task(
+    sender: &Sender<Message>,
+    task: Task<Message>,
+    pending_tasks: &mut HashMap<TaskKey, JoinHandle<()>>,
 ) {
-    match load_request {
-        LoadScope::Stations => {
-            tokio::spawn(load_initial_stations(client.clone(), sender.clone()));
-        }
-        LoadScope::TimeSeries { station_id } => {
-            tokio::spawn(load_timeseries(client.clone(), sender.clone(), station_id));
+    let mut queue = vec![task];
+
+    while let Some(task) = queue.pop() {
+        match task {
+            Task::None => {}
+            Task::Future { key, future } => {
+                if let Some(task_key) = key {
+                    if let Some(handle) = pending_tasks.remove(&task_key) {
+                        handle.abort();
+                    }
+
+                    let sender = sender.clone();
+                    let handle = tokio::spawn(async move {
+                        let message = future.await;
+                        let _ = sender.send(message).await;
+                    });
+                    pending_tasks.insert(task_key, handle);
+                } else {
+                    let sender = sender.clone();
+                    tokio::spawn(async move {
+                        let message = future.await;
+                        let _ = sender.send(message).await;
+                    });
+                }
+            }
+            Task::Batch(tasks) => {
+                queue.extend(tasks.into_iter().rev());
+            }
         }
     }
 }
 
-async fn draw_if_due<B: Backend, const N: usize>(
+async fn draw_if_due<B: Backend>(
     terminal: &mut Terminal<B>,
-    app: &mut App<N>,
+    app: &mut App,
     dirty: &mut bool,
     last_draw_at: &mut Instant,
     config: UiConfig,
@@ -319,39 +272,39 @@ async fn draw_if_due<B: Backend, const N: usize>(
     Ok(())
 }
 
-pub async fn run_app<B: Backend, const N: usize>(
+pub async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
-    mut app: App<N>,
+    mut app: App,
     config: UiConfig,
-    receiver: Receiver<AppEvent>,
-    sender: Sender<AppEvent>,
-    client: AlertClient,
+    receiver: Receiver<Message>,
+    sender: Sender<Message>,
 ) -> anyhow::Result<()> {
     let mut dirty = true;
     let mut last_draw_at = Instant::now() - config.frame_interval();
+    let mut pending_tasks = HashMap::new();
+
+    let mut reaction = app.init();
+    dirty |= reaction.redraw;
+    execute_task(&sender, reaction.task, &mut pending_tasks).await;
 
     draw_if_due(terminal, &mut app, &mut dirty, &mut last_draw_at, config).await?;
 
     loop {
-        let first_event = receiver.recv().await.context("event channel closed")?;
-        let mut reaction = app.handle_event(first_event);
+        let first_message = receiver.recv().await.context("event channel closed")?;
+        reaction = app.handle_message(first_message);
         dirty |= reaction.redraw;
-        if let Some(load_request) = reaction.load_request.take() {
-            apply_load_request(&client, &sender, load_request).await;
-        }
         if reaction.should_quit {
             return Ok(());
         }
+        execute_task(&sender, reaction.task, &mut pending_tasks).await;
 
         for _ in 1..config.max_events_per_batch {
-            let Ok(event) = receiver.try_recv() else {
+            let Ok(message) = receiver.try_recv() else {
                 break;
             };
-            reaction = app.handle_event(event);
+            reaction = app.handle_message(message);
             dirty |= reaction.redraw;
-            if let Some(load_request) = reaction.load_request.take() {
-                apply_load_request(&client, &sender, load_request).await;
-            }
+            execute_task(&sender, reaction.task, &mut pending_tasks).await;
             if reaction.should_quit {
                 return Ok(());
             }
@@ -361,12 +314,21 @@ pub async fn run_app<B: Backend, const N: usize>(
     }
 }
 
-pub async fn bootstrap() -> (App<2>, AlertClient, Sender<AppEvent>, Receiver<AppEvent>) {
-    let client = AlertClient::new();
-    let (sender, receiver) = async_channel::bounded::<AppEvent>(256);
+pub async fn bootstrap(config: UiConfig) -> (App, Sender<Message>, Receiver<Message>) {
+    let (sender, receiver) = async_channel::bounded::<Message>(256);
 
     spawn_input_task(sender.clone()).await;
-    tokio::spawn(load_initial_stations(client.clone(), sender.clone()));
 
-    (App::<2>::with_default_pages(), client, sender, receiver)
+    let mut pages = HashMap::new();
+    pages.insert(
+        PageId::Selection,
+        Page::Selection(SelectionPage::new(
+            Vec::new(),
+            config.filter_debounce_interval(),
+        )),
+    );
+
+    let frame = MultiPageFrame::new(pages, PageId::Selection);
+
+    (App::new(frame), sender, receiver)
 }

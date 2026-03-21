@@ -8,6 +8,7 @@ resolver = "2"
 anyhow = { version = "1" }
 argh = "0.1"
 async-channel = "2"
+frizbee = "0.8"
 ratatui = { version = "0.30", features = ["macros", "palette", "unstable-widget-ref", "serde"] }
 crossterm = "0.29"
 fakeit = "1.2"

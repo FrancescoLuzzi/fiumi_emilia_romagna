@@ -1,5 +1,8 @@
-use crate::app::UiAction;
-use alert_core::model::{Station, TimeSeries};
+use crate::framework::{PageModel, RenderablePageModel, Task, Update};
+use alert_core::{
+    api::AlertClient,
+    model::{Station, TimeSeries},
+};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -23,6 +26,15 @@ pub struct GraphPage {
     soglia2_data: Vec<(f64, f64)>,
     soglia3_data: Vec<(f64, f64)>,
     window: [f64; 2],
+}
+
+pub enum Action {
+    Back,
+}
+
+pub enum Message {
+    TimeSeriesLoaded(TimeSeries),
+    LoadFailed(String),
 }
 
 impl GraphPage {
@@ -55,23 +67,6 @@ impl GraphPage {
 
     pub fn set_error(&mut self, error: String) {
         self.data_state = GraphDataState::Error(error);
-    }
-
-    pub fn station_id(&self) -> &str {
-        self.station.idstazione()
-    }
-
-    pub fn handle_event(&mut self, event: Event) -> UiAction {
-        if let Event::Key(key) = event {
-            if key.kind == KeyEventKind::Press {
-                return match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => UiAction::BackToSelection,
-                    _ => UiAction::Redraw,
-                };
-            }
-        }
-
-        UiAction::Redraw
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
@@ -144,4 +139,59 @@ impl GraphPage {
             }
         }
     }
+}
+
+impl PageModel for GraphPage {
+    type Action = Action;
+    type Message = Message;
+
+    fn init(&mut self) -> Update<Self::Action, Self::Message> {
+        Update::task(Task::perform(
+            load_timeseries(self.station.idstazione().to_owned()),
+            |result| match result {
+                Ok(series) => Message::TimeSeriesLoaded(series),
+                Err(message) => Message::LoadFailed(message),
+            },
+        ))
+    }
+
+    fn handle_event(&mut self, event: Event) -> Update<Self::Action, Self::Message> {
+        if let Event::Key(key) = event {
+            if key.kind == KeyEventKind::Press {
+                return match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => Update::action(Action::Back),
+                    _ => Update::none(),
+                };
+            }
+        }
+
+        Update::none()
+    }
+
+    fn update(&mut self, message: Self::Message) -> Update<Self::Action, Self::Message> {
+        match message {
+            Message::TimeSeriesLoaded(series) => {
+                self.set_series(series);
+                Update::redraw()
+            }
+            Message::LoadFailed(message) => {
+                self.set_error(message);
+                Update::redraw()
+            }
+        }
+    }
+}
+
+impl RenderablePageModel for GraphPage {
+    fn render(&mut self, area: Rect, buf: &mut Buffer) {
+        GraphPage::render(self, area, buf);
+    }
+}
+
+async fn load_timeseries(station_id: String) -> Result<TimeSeries, String> {
+    let client = AlertClient::new();
+    client
+        .station_timeseries(&station_id)
+        .await
+        .map_err(|error| error.to_string())
 }

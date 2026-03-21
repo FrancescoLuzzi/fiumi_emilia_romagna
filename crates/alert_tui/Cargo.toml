@@ -10,6 +10,7 @@ argh = { workspace = true }
 async-channel = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
+frizbee = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }
