@@ -7,7 +7,7 @@ use anyhow::Context;
 use async_channel::{Receiver, Sender};
 use crossterm::event::Event;
 use ratatui::{Frame, Terminal, backend::Backend, buffer::Buffer, layout::Rect};
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, time::{Duration, Instant}};
 use tokio::task::JoinHandle;
 
 pub enum AppEvent {
@@ -272,6 +272,13 @@ async fn draw_if_due<B: Backend>(
     Ok(())
 }
 
+fn should_stop_event_batch(last_draw_at: Instant, config: UiConfig) -> bool {
+    const FRAME_DEADLINE_GUARD: Duration = Duration::from_millis(1);
+
+    let next_frame_at = last_draw_at + config.frame_interval();
+    next_frame_at.saturating_duration_since(Instant::now()) <= FRAME_DEADLINE_GUARD
+}
+
 pub async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: App,
@@ -299,6 +306,10 @@ pub async fn run_app<B: Backend>(
         execute_task(&sender, reaction.task, &mut pending_tasks).await;
 
         for _ in 1..config.max_events_per_batch {
+            if should_stop_event_batch(last_draw_at, config) {
+                break;
+            }
+
             let Ok(message) = receiver.try_recv() else {
                 break;
             };
