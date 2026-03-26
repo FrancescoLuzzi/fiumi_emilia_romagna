@@ -6,9 +6,9 @@ pub use crate::api::error::StationsError;
 use crate::model::{Station, Stations, TimeSeries, TimeValue};
 
 const STATIONS_URL: &str = "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-sensor-values?variabile=254,0,0/1,-,-,-/B13215";
-const TIMESERIES_URL: &str = "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/";
-const DELTA_2H_20MIN: TimeDelta = TimeDelta::minutes(140);
-const DELTA_15MIN: TimeDelta = TimeDelta::minutes(15);
+const TIMESERIES_URL: &str =
+    "https://allertameteo.regione.emilia-romagna.it/o/api/allerta/get-time-series/";
+pub const DELTA_15MIN: TimeDelta = TimeDelta::minutes(15);
 
 #[derive(Clone, Debug)]
 pub struct AlertClient {
@@ -59,18 +59,20 @@ impl AlertClient {
     }
 
     pub async fn latest_stations(&self) -> Result<Stations, StationsError> {
-        let now = latest_station_time(Local::now())?;
+        let now = latest_station_time()?;
         self.stations_at(now).await
     }
 }
 
-pub fn latest_station_time<T>(time: DateTime<T>) -> Result<DateTime<T>, StationsError>
-where
-    T: TimeZone,
-{
-    let adjusted = time - DELTA_2H_20MIN;
+pub fn latest_station_time() -> Result<DateTime<Local>, StationsError> {
+    let adjusted = Local::now();
     adjusted
         .duration_trunc(DELTA_15MIN)
+        .map_err(|err| StationsError::Unknown(err.to_string()))
+}
+
+pub fn clamp_station_time(date: DateTime<Local>) -> Result<DateTime<Local>, StationsError> {
+    date.duration_trunc(DELTA_15MIN)
         .map_err(|err| StationsError::Unknown(err.to_string()))
 }
 
@@ -82,7 +84,9 @@ where
 }
 
 pub async fn get_station_timeseries(station: &Station) -> Result<TimeSeries, StationsError> {
-    AlertClient::new().station_timeseries(station.idstazione()).await
+    AlertClient::new()
+        .station_timeseries(station.idstazione())
+        .await
 }
 
 pub async fn get_stations_now() -> Result<Stations, StationsError> {

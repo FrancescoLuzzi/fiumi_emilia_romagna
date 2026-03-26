@@ -6,12 +6,12 @@ edition = "2024"
 [dependencies]
 alert_core = { path = "../alert_core" }
 anyhow = { workspace = true }
-argh = { workspace = true }
+argh = "0.1"
 async-channel = { workspace = true }
-ratatui = { workspace = true }
-crossterm = { workspace = true }
+ratatui = { version = "0.30", features = ["macros", "palette", "unstable-widget-ref", "serde"] }
+crossterm = "0.29"
 frizbee = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }
-unicode-width = { workspace = true }
+unicode-width = "0.2"

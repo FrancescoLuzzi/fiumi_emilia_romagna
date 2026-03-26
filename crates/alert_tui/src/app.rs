@@ -1,13 +1,18 @@
 use crate::{
     config::UiConfig,
-    framework::{AppMessage, MultiPageFrame, PageModel, RenderablePageModel, Task, TaskKey, Update},
+    framework::{
+        AppMessage, MultiPageFrame, PageModel, RenderablePageModel, Task, TaskKey, Update,
+    },
     pages::{graph, graph::GraphPage, selection, selection::SelectionPage},
 };
 use anyhow::Context;
 use async_channel::{Receiver, Sender};
 use crossterm::event::Event;
 use ratatui::{Frame, Terminal, backend::Backend, buffer::Buffer, layout::Rect};
-use std::{collections::HashMap, time::{Duration, Instant}};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use tokio::task::JoinHandle;
 
 pub enum AppEvent {
@@ -80,6 +85,13 @@ impl RenderablePageModel for Page {
             Page::Graph(page) => page.render(area, buf),
         }
     }
+
+    fn cursor_position(&self, area: Rect) -> Option<(u16, u16)> {
+        match self {
+            Page::Selection(page) => page.cursor_position(area),
+            Page::Graph(page) => page.cursor_position(area),
+        }
+    }
 }
 
 pub enum PageAction {
@@ -98,6 +110,10 @@ impl App {
 
     pub fn render(&mut self, frame: &mut Frame) {
         self.pages.render(frame.area(), frame.buffer_mut());
+
+        if let Some((x, y)) = self.pages.cursor_position(frame.area()) {
+            frame.set_cursor_position((x, y));
+        }
     }
 
     pub fn active_page(&self) -> PageId {
@@ -108,10 +124,7 @@ impl App {
         let _ = self.pages.show(PageId::Selection);
     }
 
-    fn show_graph(
-        &mut self,
-        station: alert_core::model::Station,
-    ) -> Update<PageAction, Message> {
+    fn show_graph(&mut self, station: alert_core::model::Station) -> Update<PageAction, Message> {
         self.pages
             .insert_and_show(PageId::Graph, Page::Graph(GraphPage::loading(station)));
         self.pages.init()
@@ -121,10 +134,7 @@ impl App {
         let _ = self.pages.remove_page(PageId::Graph);
     }
 
-    fn handle_page_update(
-        &mut self,
-        update: Update<PageAction, Message>,
-    ) -> AppReaction {
+    fn handle_page_update(&mut self, update: Update<PageAction, Message>) -> AppReaction {
         let mut reaction = AppReaction {
             redraw: update.redraw,
             task: update.task,
@@ -161,8 +171,11 @@ impl App {
     pub fn handle_message(&mut self, message: Message) -> AppReaction {
         match message {
             Message::Input(event) => {
+                let is_resize = matches!(event, Event::Resize(_, _));
                 let update = self.pages.handle_event(event);
-                self.handle_page_update(update)
+                let mut reaction = self.handle_page_update(update);
+                reaction.redraw |= is_resize;
+                reaction
             }
             Message::AppEvent(AppEvent::Selection(message)) => self
                 .pages
@@ -333,10 +346,7 @@ pub async fn bootstrap(config: UiConfig) -> (App, Sender<Message>, Receiver<Mess
     let mut pages = HashMap::new();
     pages.insert(
         PageId::Selection,
-        Page::Selection(SelectionPage::new(
-            Vec::new(),
-            config.filter_debounce_interval(),
-        )),
+        Page::Selection(SelectionPage::new(config.filter_debounce_interval())),
     );
 
     let frame = MultiPageFrame::new(pages, PageId::Selection);

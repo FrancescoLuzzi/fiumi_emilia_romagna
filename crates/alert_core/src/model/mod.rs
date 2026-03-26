@@ -1,6 +1,6 @@
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
-use serde_with::{serde_as, VecSkipError};
+use serde_with::{VecSkipError, serde_as};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Station {
@@ -111,6 +111,12 @@ impl Stations {
     }
 }
 
+impl AsRef<[Station]> for Stations {
+    fn as_ref(&self) -> &[Station] {
+        &self.0
+    }
+}
+
 fn de_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
     Ok(match Value::deserialize(deserializer)? {
         Value::Number(num) => num.as_u64().ok_or(de::Error::custom("Invalid number"))?,
@@ -156,11 +162,15 @@ impl TimeSeries {
         self.0.is_empty()
     }
 
+    /// Converts the time series into chart points using Unix timestamps in milliseconds on the x axis.
+    ///
+    /// The upstream API returns roughly 250 readings spaced 15 minutes apart, with the latest
+    /// reading aligned with the current timestamp. Consumers should therefore treat the x axis as
+    /// real time and render at least one label per day for readability.
     pub fn as_dataset(self) -> Vec<(f64, f64)> {
         self.0
             .into_iter()
-            .enumerate()
-            .map(|(i, tv)| (i as f64, tv.value().unwrap_or(0.0)))
+            .map(|tv| (tv.timestamp() as f64, tv.value().unwrap_or(0.0)))
             .collect()
     }
 }

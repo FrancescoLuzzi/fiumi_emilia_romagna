@@ -185,6 +185,10 @@ pub trait PageModel {
 
 pub trait RenderablePageModel: PageModel {
     fn render(&mut self, area: Rect, buf: &mut Buffer);
+
+    fn cursor_position(&self, _area: Rect) -> Option<(u16, u16)> {
+        None
+    }
 }
 
 pub struct MultiPageFrame<T, P>
@@ -249,6 +253,10 @@ where
 
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
         self.current_page_mut().render(area, buf);
+    }
+
+    pub fn cursor_position(&self, area: Rect) -> Option<(u16, u16)> {
+        self.pages.get(&self.active_page)?.cursor_position(area)
     }
 
     fn current_page_mut(&mut self) -> &mut P {
