@@ -2,6 +2,12 @@ use crossterm::event::Event;
 use ratatui::{buffer::Buffer, layout::Rect};
 use std::{collections::HashMap, future::Future, hash::Hash, pin::Pin};
 
+mod config;
+mod runtime;
+
+pub use config::UiConfig;
+pub use runtime::{AppModel, AppReaction, run_app, spawn_input_task};
+
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 pub type TaskKey = &'static str;
 
@@ -248,7 +254,9 @@ where
         page_id: T,
         message: P::Message,
     ) -> Option<Update<P::Action, P::Message>> {
-        self.pages.get_mut(&page_id).map(|page| page.update(message))
+        self.pages
+            .get_mut(&page_id)
+            .map(|page| page.update(message))
     }
 
     pub fn render(&mut self, area: Rect, buf: &mut Buffer) {

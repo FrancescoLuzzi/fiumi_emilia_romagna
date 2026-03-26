@@ -1,19 +1,14 @@
 use crate::{
-    config::UiConfig,
     framework::{
-        AppMessage, MultiPageFrame, PageModel, RenderablePageModel, Task, TaskKey, Update,
+        AppMessage, AppModel, AppReaction, MultiPageFrame, PageModel, RenderablePageModel,
+        Task, UiConfig, Update, spawn_input_task,
     },
     pages::{graph, graph::GraphPage, selection, selection::SelectionPage},
 };
-use anyhow::Context;
 use async_channel::{Receiver, Sender};
 use crossterm::event::Event;
-use ratatui::{Frame, Terminal, backend::Backend, buffer::Buffer, layout::Rect};
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
-use tokio::task::JoinHandle;
+use ratatui::{Frame, buffer::Buffer, layout::Rect};
+use std::collections::HashMap;
 
 pub enum AppEvent {
     Selection(selection::Message),
@@ -108,14 +103,6 @@ impl App {
         Self { pages }
     }
 
-    pub fn render(&mut self, frame: &mut Frame) {
-        self.pages.render(frame.area(), frame.buffer_mut());
-
-        if let Some((x, y)) = self.pages.cursor_position(frame.area()) {
-            frame.set_cursor_position((x, y));
-        }
-    }
-
     pub fn active_page(&self) -> PageId {
         self.pages.active_page()
     }
@@ -134,11 +121,11 @@ impl App {
         let _ = self.pages.remove_page(PageId::Graph);
     }
 
-    fn handle_page_update(&mut self, update: Update<PageAction, Message>) -> AppReaction {
+    fn handle_page_update(&mut self, update: Update<PageAction, Message>) -> AppReaction<AppEvent> {
         let mut reaction = AppReaction {
             redraw: update.redraw,
             task: update.task,
-            ..AppReaction::default()
+            should_quit: false,
         };
 
         match update.action {
@@ -162,13 +149,17 @@ impl App {
             }
         }
     }
+}
 
-    pub fn init(&mut self) -> AppReaction {
+impl AppModel for App {
+    type Event = AppEvent;
+
+    fn init(&mut self) -> AppReaction<Self::Event> {
         let update = self.pages.init();
         self.handle_page_update(update)
     }
 
-    pub fn handle_message(&mut self, message: Message) -> AppReaction {
+    fn handle_message(&mut self, message: AppMessage<Self::Event>) -> AppReaction<Self::Event> {
         match message {
             Message::Input(event) => {
                 let is_resize = matches!(event, Event::Resize(_, _));
@@ -192,149 +183,17 @@ impl App {
                 .unwrap_or_default(),
             Message::Shutdown => AppReaction {
                 should_quit: true,
-                ..AppReaction::default()
+                ..Default::default()
             },
         }
     }
-}
 
-#[derive(Default)]
-pub struct AppReaction {
-    pub redraw: bool,
-    pub should_quit: bool,
-    pub task: Task<Message>,
-}
+    fn render(&mut self, frame: &mut Frame) {
+        self.pages.render(frame.area(), frame.buffer_mut());
 
-pub async fn spawn_input_task(sender: Sender<Message>) {
-    std::thread::spawn(move || {
-        loop {
-            match crossterm::event::read() {
-                Ok(event) => {
-                    if sender.send_blocking(Message::Input(event)).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => {
-                    let _ = sender.send_blocking(Message::Shutdown);
-                    break;
-                }
-            }
+        if let Some((x, y)) = self.pages.cursor_position(frame.area()) {
+            frame.set_cursor_position((x, y));
         }
-    });
-}
-
-async fn execute_task(
-    sender: &Sender<Message>,
-    task: Task<Message>,
-    pending_tasks: &mut HashMap<TaskKey, JoinHandle<()>>,
-) {
-    let mut queue = vec![task];
-
-    while let Some(task) = queue.pop() {
-        match task {
-            Task::None => {}
-            Task::Future { key, future } => {
-                if let Some(task_key) = key {
-                    if let Some(handle) = pending_tasks.remove(&task_key) {
-                        handle.abort();
-                    }
-
-                    let sender = sender.clone();
-                    let handle = tokio::spawn(async move {
-                        let message = future.await;
-                        let _ = sender.send(message).await;
-                    });
-                    pending_tasks.insert(task_key, handle);
-                } else {
-                    let sender = sender.clone();
-                    tokio::spawn(async move {
-                        let message = future.await;
-                        let _ = sender.send(message).await;
-                    });
-                }
-            }
-            Task::Batch(tasks) => {
-                queue.extend(tasks.into_iter().rev());
-            }
-        }
-    }
-}
-
-async fn draw_if_due<B: Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-    dirty: &mut bool,
-    last_draw_at: &mut Instant,
-    config: UiConfig,
-) -> anyhow::Result<()> {
-    if !*dirty {
-        return Ok(());
-    }
-
-    let frame_interval = config.frame_interval();
-    let elapsed = last_draw_at.elapsed();
-    if elapsed < frame_interval {
-        tokio::time::sleep(frame_interval - elapsed).await;
-    }
-
-    terminal
-        .draw(|frame| app.render(frame))
-        .map_err(|err| anyhow::anyhow!("Error drawing frame: {err}"))?;
-    *last_draw_at = Instant::now();
-    *dirty = false;
-    Ok(())
-}
-
-fn should_stop_event_batch(last_draw_at: Instant, config: UiConfig) -> bool {
-    const FRAME_DEADLINE_GUARD: Duration = Duration::from_millis(1);
-
-    let next_frame_at = last_draw_at + config.frame_interval();
-    next_frame_at.saturating_duration_since(Instant::now()) <= FRAME_DEADLINE_GUARD
-}
-
-pub async fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    mut app: App,
-    config: UiConfig,
-    receiver: Receiver<Message>,
-    sender: Sender<Message>,
-) -> anyhow::Result<()> {
-    let mut dirty = true;
-    let mut last_draw_at = Instant::now() - config.frame_interval();
-    let mut pending_tasks = HashMap::new();
-
-    let mut reaction = app.init();
-    dirty |= reaction.redraw;
-    execute_task(&sender, reaction.task, &mut pending_tasks).await;
-
-    draw_if_due(terminal, &mut app, &mut dirty, &mut last_draw_at, config).await?;
-
-    loop {
-        let first_message = receiver.recv().await.context("event channel closed")?;
-        reaction = app.handle_message(first_message);
-        dirty |= reaction.redraw;
-        if reaction.should_quit {
-            return Ok(());
-        }
-        execute_task(&sender, reaction.task, &mut pending_tasks).await;
-
-        for _ in 1..config.max_events_per_batch {
-            if should_stop_event_batch(last_draw_at, config) {
-                break;
-            }
-
-            let Ok(message) = receiver.try_recv() else {
-                break;
-            };
-            reaction = app.handle_message(message);
-            dirty |= reaction.redraw;
-            execute_task(&sender, reaction.task, &mut pending_tasks).await;
-            if reaction.should_quit {
-                return Ok(());
-            }
-        }
-
-        draw_if_due(terminal, &mut app, &mut dirty, &mut last_draw_at, config).await?;
     }
 }
 
